@@ -1,5 +1,6 @@
-$inputFile  = 'D:\program615\allegro\work\0728\aaa.txt'
-$outputFile = 'D:\program615\allegro\work\0728\components.csv'
+﻿$name = "12mm_up"
+$inputFile  = 'D:\git_warehouse\allegro_skill\pwsh\'+$name+'.txt'
+$outputFile = 'D:\git_warehouse\allegro_skill\pwsh\csv\'+$name+'.csv'
 
 $text = Get-Content -LiteralPath $inputFile -Raw
 
@@ -14,6 +15,11 @@ $rows = foreach ($block in $blocks) {
             $deviceType = $Matches[1].Trim()
         }
 
+        $symbolName = ''
+        if ($block -match '(?m)^\s*Symbol name:\s*(.*?)\s*$') {
+            $symbolName = $Matches[1].Trim()
+        }
+
         $partNumber = ''
         if ($block -match '(?m)^\s*PART_NUMBER\s*=\s*(.*?)\s*$') {
             $partNumber = $Matches[1].Trim()
@@ -23,6 +29,7 @@ $rows = foreach ($block in $blocks) {
             'RefDes'      = $refDes
             'Device Type' = $deviceType
             'PART_NUMBER' = $partNumber
+            'Symbol name' = $symbolName
         }
     }
 }
