@@ -1,4 +1,4 @@
-OUTPUT_PATH = "D:/program615/allegro/skill/0729/output"
+OUTPUT_PATH = "D:/program615/allegro/work/retimer/csv"
 OUTPUT_FILENAME = "aaa"
 
 EXCLUDE_PARAM = list(
@@ -10,11 +10,25 @@ EXCLUDE_PARAM = list(
 )
 
 QUERY_PARAM = list(
-    list("PART_NUMBER")
-    list("DEVICE_TYPE")
-    list("REFDES")
-    list("PACKAGE_HEIGHT_MAX")
+    list("PART_NUMBER"
+         'iterate_part_number)
+
+    list("DEVICE_TYPE"
+         'iterate_device_type)
+
+    list("REFDES"
+         'iterate_refdes)
+
+    list("MOUNT_SIDE"
+         'iterate_mount_side)
+
+    list("PACKAGE_HEIGHT_MAX_TOP"
+         'iterate_installed_placebound_top)
+
+    list("PACKAGE_HEIGHT_MAX_BOTTOM"
+         'iterate_installed_placebound_bottom)
 )
+
 ; =================================================================================================================================================================================
 procedure(do_csv(outPath)
     prog((csvPort)
@@ -71,7 +85,7 @@ procedure(get_all_symbols()
     )
 )
 
-procedure(iterate_placebound(sym)
+procedure(iterate_placebound_top(sym)
     let((layerUpper heightValue child children)
         layerUpper = nil
         heightValue = nil
@@ -98,7 +112,45 @@ procedure(iterate_placebound(sym)
                         layerUpper
                         "PACKAGE GEOMETRY/PLACE_BOUND_TOP"
                     )
-                    ||
+                    heightValue = get_db_property(
+                        child
+                        "PACKAGE_HEIGHT_MAX"
+                    )
+                )
+            )
+        )
+
+        if(heightValue then
+            heightValue
+        else
+            "N/A"
+        )
+    )
+)
+
+procedure(iterate_placebound_bottom(sym)
+    let((layerUpper heightValue child children)
+        layerUpper = nil
+        heightValue = nil
+        child = nil
+        children = nil
+
+        children = sym->children
+
+        ; 有些 PLACE_BOUND 只存在于 symbol definition 中
+        when(sym->definition && sym->definition->children
+            children = append(
+                children
+                sym->definition->children
+            )
+        )
+
+        ; 查找第一个有效的 PACKAGE_HEIGHT_MAX
+        foreach(child children
+            when(null(heightValue) && child && child->layer
+                layerUpper = upperCase(child->layer)
+
+                when(
                     equal(
                         layerUpper
                         "PACKAGE GEOMETRY/PLACE_BOUND_BOTTOM"
@@ -147,10 +199,10 @@ procedure(iterate_refdes(sym)
             refdes = comp->name
         )
 
-        ; 找不到时使用 symbol->refdes
-        unless(refdes
-            refdes = sym->refdes
-        )
+        ; ; 找不到时使用 symbol->refdes
+        ; unless(refdes
+        ;     refdes = sym->refdes
+        ; )
 
         if(refdes then
             refdes
@@ -190,6 +242,32 @@ procedure(iterate_part_number(sym)
     )
 )
 
+procedure(iterate_mount_side(sym)
+    if(sym->isMirrored then
+        "0"
+    else
+        "1"
+    )
+)
+
+; 只有正面安装时才输出 TOP PLACE_BOUND
+procedure(iterate_installed_placebound_top(sym)
+    if(sym->isMirrored then
+        "N/A"
+    else
+        iterate_placebound_top(sym)
+    )
+)
+
+; 只有背面安装时才输出 BOTTOM PLACE_BOUND
+procedure(iterate_installed_placebound_bottom(sym)
+    if(sym->isMirrored then
+        iterate_placebound_bottom(sym)
+    else
+        "N/A"
+    )
+)
+
 procedure(get_db_property(dbid propName)
     let((props value)
         value = nil
@@ -216,13 +294,14 @@ procedure(iterate(allSymbols csvPort)
         (partNumber "")
         (deviceType "")
         (refdes "")
-        (heightValue "")
+        (mountSide 1)
+        (placebound_top "")
+        (placebound_bottom "")
         sym
     )
         foreach(sym allSymbols
             symCount = add1(symCount)
 
-            ; Progress indicator
             when(zerop(mod(symCount 1000))
                 printf(
                     "  Processing %d / %d symbols...\n"
@@ -231,27 +310,39 @@ procedure(iterate(allSymbols csvPort)
                 )
             )
 
-            ; Only process symbols with a refdes
             refdes = iterate_refdes(sym)
 
-            unless(equal(refdes "N/A")
-                deviceType = iterate_device_type(sym)
-                partNumber = iterate_part_number(sym)
-                heightValue = iterate_placebound(sym)
+            deviceType = iterate_device_type(sym)
+            partNumber = iterate_part_number(sym)
 
-                ; 顺序与 QUERY_PARAM 保持一致：
-                ; PART_NUMBER, DEVICE_TYPE, REFDES, PACKAGE_HEIGHT_MAX
-                line = sprintf(
-                    nil
-                    "%s,%s,%s,%s\n"
-                    partNumber
-                    deviceType
-                    refdes
-                    heightValue
-                )
+            placebound_top = ""
+            placebound_bottom = ""
 
-                fprintf(csvPort "%s" line)
+            if(sym->isMirrored then
+                ; 背面安装
+                mountSide = 0
+                placebound_bottom =
+                    iterate_placebound_bottom(sym)
+            else
+                ; 正面安装
+                mountSide = 1
+                placebound_top =
+                    iterate_placebound_top(sym)
             )
+
+            line = sprintf(
+                nil
+                "\"%s\",\"%s\",\"%s\",%d,\"%s\",\"%s\"\n"
+                partNumber
+                deviceType
+                refdes
+                mountSide
+                placebound_top
+                placebound_bottom
+            )
+
+            fprintf(csvPort "%s" line)
+            
         )
     )
 )
