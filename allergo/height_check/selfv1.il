@@ -29,6 +29,9 @@ QUERY_PARAM = list(
          'iterate_installed_placebound_bottom)
 )
 
+; Compiled once and reused by csv_escape().
+HC_CSV_QUOTE_PATTERN = pcreCompile("\"")
+
 ; =================================================================================================================================================================================
 procedure(do_csv(outPath)
     prog((csvPort)
@@ -253,7 +256,7 @@ procedure(iterate_mount_side(sym)
 ; 只有正面安装时才输出 TOP PLACE_BOUND
 procedure(iterate_installed_placebound_top(sym)
     if(sym->isMirrored then
-        "N/A"
+        ""
     else
         iterate_placebound_top(sym)
     )
@@ -264,7 +267,7 @@ procedure(iterate_installed_placebound_bottom(sym)
     if(sym->isMirrored then
         iterate_placebound_bottom(sym)
     else
-        "N/A"
+        ""
     )
 )
 
@@ -287,62 +290,81 @@ procedure(get_db_property(dbid propName)
     )
 )
 
+;======================================================================
+; Convert one value to a valid CSV field.
+; - nil becomes an empty field
+; - non-string values are converted to text
+; - embedded double quotes become two double quotes
+; - fields containing comma, quote, CR, or LF are wrapped in quotes
+;======================================================================
+procedure(csv_escape(value)
+    let((text needsQuotes)
+        if(null(value) then
+            text = ""
+        else
+            if(stringp(value) then
+                text = value
+            else
+                text = sprintf(
+                    nil
+                    "%L"
+                    value
+                )
+            )
+        )
+
+        needsQuotes = strpbrk(
+            text
+            ",\"\r\n"
+        )
+
+        text = pcreReplace(
+            HC_CSV_QUOTE_PATTERN
+            text
+            "\"\""
+            0
+        )
+
+        if(needsQuotes then
+            strcat("\"" text "\"")
+        else
+            text
+        )
+    )
+)
+
 procedure(iterate(allSymbols csvPort)
     let((
-        (symCount 0)
-        (line "")
-        (partNumber "")
-        (deviceType "")
-        (refdes "")
-        (mountSide 1)
-        (placebound_top "")
-        (placebound_bottom "")
+        (sep "")
+        (value "")
+        param
+        callback
         sym
     )
         foreach(sym allSymbols
-            symCount = add1(symCount)
-
-            when(zerop(mod(symCount 1000))
-                printf(
-                    "  Processing %d / %d symbols...\n"
-                    symCount
-                    length(allSymbols)
+            sep = ""
+            ; 严格按照 QUERY_PARAM 的声明顺序执行
+            foreach(param QUERY_PARAM
+                callback = cadr(param)
+                ; 相当于 callback(sym)
+                value = funcall(
+                    callback
+                    sym
                 )
+
+                value = csv_escape(value)
+
+                fprintf(
+                    csvPort
+                    "%s%s"
+                    sep
+                    value
+                )
+
+                sep = ","
             )
 
-            refdes = iterate_refdes(sym)
-
-            deviceType = iterate_device_type(sym)
-            partNumber = iterate_part_number(sym)
-
-            placebound_top = ""
-            placebound_bottom = ""
-
-            if(sym->isMirrored then
-                ; 背面安装
-                mountSide = 0
-                placebound_bottom =
-                    iterate_placebound_bottom(sym)
-            else
-                ; 正面安装
-                mountSide = 1
-                placebound_top =
-                    iterate_placebound_top(sym)
-            )
-
-            line = sprintf(
-                nil
-                "\"%s\",\"%s\",\"%s\",%d,\"%s\",\"%s\"\n"
-                partNumber
-                deviceType
-                refdes
-                mountSide
-                placebound_top
-                placebound_bottom
-            )
-
-            fprintf(csvPort "%s" line)
-            
+            fprintf(csvPort "\n")
         )
     )
 )
@@ -373,7 +395,7 @@ procedure(main()
                 ; ---- Write CSV header from QUERY_PARAM -----------
                 foreach(param QUERY_PARAM
                     when(listp(param) && greaterp(length(param) 0)
-                        colName = car(param)
+                        colName = csv_escape(car(param))
                         fprintf(csvPort "%s%s" sep colName)
                         sep = ","
                     )
