@@ -1,38 +1,20 @@
 ﻿# 定义要处理的文件名数组
 $fileNames = @(
-    @{ Name = "down_0mm_1"     ;      dxf_height = 0 },                               
-    @{ Name = "down_12mm_part1";      dxf_height = 12 },                                   
-    @{ Name = "down_12mm_part2";      dxf_height = 12 },                                   
-    @{ Name = "down_1mm"       ;      dxf_height = 1 },                               
-    @{ Name = "down_2mm_1"     ;      dxf_height = 2 },                               
-    @{ Name = "down_2mm_2"     ;      dxf_height = 2 },                               
-    @{ Name = "down_7mm_1"     ;      dxf_height = 7 },                               
-    @{ Name = "down_7mm_2"     ;      dxf_height = 7 },                               
-    @{ Name = "down_7mm_3"     ;      dxf_height = 7 },                               
-    @{ Name = "down_7mm_4"     ;      dxf_height = 7 },                               
-    @{ Name = "down_mcio1"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio10"    ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio2"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio3_1"   ;      dxf_height = 1 },                                   
-    @{ Name = "down_mcio3_2"   ;      dxf_height = 1 },                                   
-    @{ Name = "down_mcio4"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio6"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio7"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio9"     ;      dxf_height = 1 },                               
-    @{ Name = "down_mcio_5"    ;      dxf_height = 1 },                               
-    @{ Name = "dwn_mcio8"      ;      dxf_height = 1 }
+    @{ Name = "aaa"     ;      dxf_height = 1}                               
 )
 
 # 基础路径
-$basePath = "E:\RjDir\UserData\Desktop\height_check\SP7-0727_2100_pcb\dxf\"
+$basePath = "D:\program615\allegro\work\retimer\csv"
 # 输出文件路径（所有数据合并到一个CSV）
 $outputFile = $basePath + "\csv\" + "combined_results.csv"
+
+# stop modify ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 # 用于存储所有数据的集合
 $allRows = @()
 
 # 遍历每个文件名
 foreach ($name in $fileNames) {
-    $inputFile = $basePath + $name.Name + '.txt'
+    $inputFile = $basePath + "\" + $name.Name + '.txt'
     
     # 检查文件是否存在
     if (-not (Test-Path -LiteralPath $inputFile)) {
