@@ -1,4 +1,4 @@
-OUTPUT_PATH = "D:/program615/allegro/skill/0729/output"
+OUTPUT_PATH = "D:/program615/allegro/work/retimer/csv"
 OUTPUT_FILENAME = "aaa"
 
 EXCLUDE_PARAM = list(
@@ -10,11 +10,28 @@ EXCLUDE_PARAM = list(
 )
 
 QUERY_PARAM = list(
-    list("PART_NUMBER")
-    list("DEVICE_TYPE")
-    list("REFDES")
-    list("PACKAGE_HEIGHT_MAX")
+    list("PART_NUMBER"
+         'iterate_part_number)
+
+    list("DEVICE_TYPE"
+         'iterate_device_type)
+
+    list("REFDES"
+         'iterate_refdes)
+
+    list("MOUNT_SIDE"
+         'iterate_mount_side)
+
+    list("PACKAGE_HEIGHT_MAX_TOP"
+         'iterate_installed_placebound_top)
+
+    list("PACKAGE_HEIGHT_MAX_BOTTOM"
+         'iterate_installed_placebound_bottom)
 )
+
+; Compiled once and reused by csv_escape().
+HC_CSV_QUOTE_PATTERN = pcreCompile("\"")
+
 ; =================================================================================================================================================================================
 procedure(do_csv(outPath)
     prog((csvPort)
@@ -71,7 +88,7 @@ procedure(get_all_symbols()
     )
 )
 
-procedure(iterate_placebound(sym)
+procedure(iterate_placebound_top(sym)
     let((layerUpper heightValue child children)
         layerUpper = nil
         heightValue = nil
@@ -98,7 +115,45 @@ procedure(iterate_placebound(sym)
                         layerUpper
                         "PACKAGE GEOMETRY/PLACE_BOUND_TOP"
                     )
-                    ||
+                    heightValue = get_db_property(
+                        child
+                        "PACKAGE_HEIGHT_MAX"
+                    )
+                )
+            )
+        )
+
+        if(heightValue then
+            heightValue
+        else
+            "N/A"
+        )
+    )
+)
+
+procedure(iterate_placebound_bottom(sym)
+    let((layerUpper heightValue child children)
+        layerUpper = nil
+        heightValue = nil
+        child = nil
+        children = nil
+
+        children = sym->children
+
+        ; 有些 PLACE_BOUND 只存在于 symbol definition 中
+        when(sym->definition && sym->definition->children
+            children = append(
+                children
+                sym->definition->children
+            )
+        )
+
+        ; 查找第一个有效的 PACKAGE_HEIGHT_MAX
+        foreach(child children
+            when(null(heightValue) && child && child->layer
+                layerUpper = upperCase(child->layer)
+
+                when(
                     equal(
                         layerUpper
                         "PACKAGE GEOMETRY/PLACE_BOUND_BOTTOM"
@@ -147,10 +202,10 @@ procedure(iterate_refdes(sym)
             refdes = comp->name
         )
 
-        ; 找不到时使用 symbol->refdes
-        unless(refdes
-            refdes = sym->refdes
-        )
+        ; ; 找不到时使用 symbol->refdes
+        ; unless(refdes
+        ;     refdes = sym->refdes
+        ; )
 
         if(refdes then
             refdes
@@ -190,6 +245,32 @@ procedure(iterate_part_number(sym)
     )
 )
 
+procedure(iterate_mount_side(sym)
+    if(sym->isMirrored then
+        "0"
+    else
+        "1"
+    )
+)
+
+; 只有正面安装时才输出 TOP PLACE_BOUND
+procedure(iterate_installed_placebound_top(sym)
+    if(sym->isMirrored then
+        ""
+    else
+        iterate_placebound_top(sym)
+    )
+)
+
+; 只有背面安装时才输出 BOTTOM PLACE_BOUND
+procedure(iterate_installed_placebound_bottom(sym)
+    if(sym->isMirrored then
+        iterate_placebound_bottom(sym)
+    else
+        ""
+    )
+)
+
 procedure(get_db_property(dbid propName)
     let((props value)
         value = nil
@@ -209,49 +290,81 @@ procedure(get_db_property(dbid propName)
     )
 )
 
+;======================================================================
+; Convert one value to a valid CSV field.
+; - nil becomes an empty field
+; - non-string values are converted to text
+; - embedded double quotes become two double quotes
+; - fields containing comma, quote, CR, or LF are wrapped in quotes
+;======================================================================
+procedure(csv_escape(value)
+    let((text needsQuotes)
+        if(null(value) then
+            text = ""
+        else
+            if(stringp(value) then
+                text = value
+            else
+                text = sprintf(
+                    nil
+                    "%L"
+                    value
+                )
+            )
+        )
+
+        needsQuotes = strpbrk(
+            text
+            ",\"\r\n"
+        )
+
+        text = pcreReplace(
+            HC_CSV_QUOTE_PATTERN
+            text
+            "\"\""
+            0
+        )
+
+        if(needsQuotes then
+            strcat("\"" text "\"")
+        else
+            text
+        )
+    )
+)
+
 procedure(iterate(allSymbols csvPort)
     let((
-        (symCount 0)
-        (line "")
-        (partNumber "")
-        (deviceType "")
-        (refdes "")
-        (heightValue "")
+        (sep "")
+        (value "")
+        param
+        callback
         sym
     )
         foreach(sym allSymbols
-            symCount = add1(symCount)
-
-            ; Progress indicator
-            when(zerop(mod(symCount 1000))
-                printf(
-                    "  Processing %d / %d symbols...\n"
-                    symCount
-                    length(allSymbols)
-                )
-            )
-
-            ; Only process symbols with a refdes
-            refdes = iterate_refdes(sym)
-
-            unless(equal(refdes "N/A")
-                deviceType = iterate_device_type(sym)
-                partNumber = iterate_part_number(sym)
-                heightValue = iterate_placebound(sym)
-
-                ; 顺序与 QUERY_PARAM 保持一致：
-                ; PART_NUMBER, DEVICE_TYPE, REFDES, PACKAGE_HEIGHT_MAX
-                line = sprintf(
-                    nil
-                    "%s,%s,%s,%s\n"
-                    partNumber
-                    deviceType
-                    refdes
-                    heightValue
+            sep = ""
+            ; 严格按照 QUERY_PARAM 的声明顺序执行
+            foreach(param QUERY_PARAM
+                callback = cadr(param)
+                ; 相当于 callback(sym)
+                value = funcall(
+                    callback
+                    sym
                 )
 
-                fprintf(csvPort "%s" line)
+                value = csv_escape(value)
+
+                fprintf(
+                    csvPort
+                    "%s%s"
+                    sep
+                    value
+                )
+
+                sep = ","
             )
+
+            fprintf(csvPort "\n")
         )
     )
 )
@@ -282,7 +395,7 @@ procedure(main()
                 ; ---- Write CSV header from QUERY_PARAM -----------
                 foreach(param QUERY_PARAM
                     when(listp(param) && greaterp(length(param) 0)
-                        colName = car(param)
+                        colName = csv_escape(car(param))
                         fprintf(csvPort "%s%s" sep colName)
                         sep = ","
                     )
